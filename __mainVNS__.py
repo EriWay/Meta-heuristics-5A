@@ -15,6 +15,7 @@ from time import perf_counter
 from typing import List
 import os
 import errno
+from random import seed
 
 def info_provider(solution: Solution):
 
@@ -51,7 +52,8 @@ def mkdir_p(path):
 
 ### Tests sur les instances ###
 
-TEMPS_MAX_PAR_INSTANCE: float = 180 # en secondes
+TEMPS_MAX_PAR_INSTANCE: float = 8 # en secondes
+SEED: int = 42 # graine aléatoire pour la reproductibilité
 INSTANCES_A_TESTER: int = 1 # tester les instances 1 à n
 
 test_datetime = datetime.now()
@@ -64,7 +66,7 @@ with open(f"{relative_path}log.csv", 'x') as log:
 
     for instance in range(1, INSTANCES_A_TESTER + 1):
         print(f"Instance {instance}")
-
+        seed(SEED + instance)
         # importation du problème
         problem: Problem = Importer().import_problem(f"Instance{instance}.txt")
 
