@@ -1,5 +1,9 @@
 """This module defines the neighborhood structures used by the VND,
 as defined by Rahimian et al., 2017
+
+Tous les voisinages evaluent chaque mouvement candidat par delta-evaluation
+(move_delta) et faisabilite locale (is_feasible_local), puis n'effectuent
+qu'une seule copie profonde pour le meilleur mouvement retenu.
 """
 
 from model.problem import Problem
@@ -12,185 +16,117 @@ class Neighborhood:
     
     def __init__(self, problem: Problem) -> None:
         self.problem = problem
-    
+
     def best_neighbor(self, solution: Solution) -> Solution:
         """Return best neighbor of solution in this neighborhood structure."""
         pass
 
 
-##
+def _apply_best(solution: Solution, best_move):
+    """Retourne une copie de solution avec le meilleur mouvement applique."""
+    if best_move is None:
+        return solution
+    neighbor = solution.deep_copy()
+    for (e, d, ns) in best_move:
+        neighbor.planning[e][d] = ns
+    return neighbor
 
-# def compare(best_value: int, best_solution: Solution, neighbor: Solution) -> Solution:
-#     """Retourne la nouvelle meilleure """
+
+def _evaluate(solution: Solution, changes, touched, best_delta, best_move):
+    """Evalue un mouvement (changes) par delta + faisabilite locale.
+    Retourne (best_delta, best_move) mis a jour si le mouvement est meilleur."""
+    delta = move_delta(solution, changes)
+    if delta < best_delta:
+        plan = solution.planning
+        olds = [(e, d, plan[e][d]) for (e, d, _) in changes]
+        for (e, d, ns) in changes:
+            plan[e][d] = ns
+        feasible = is_feasible_local(solution, touched)
+        for (e, d, os_) in olds:
+            plan[e][d] = os_
+        if feasible:
+            return delta, changes
+    return best_delta, best_move
 
 
 class TwoExchangeNeighborhood(Neighborhood):
-    """This neighborhood consists of all moves where two shifts are swapped
-    between two different nurses on the same day."""
-
+    """Echange du shift entre deux employes sur un meme jour."""
     def __init__(self, problem: Problem) -> None:
         super().__init__(problem)
     
     def best_neighbor(self, solution: Solution) -> Solution:
-        # Variables
-        best_solution: Solution = solution
-        best_value: int = solution.value()
+        plan = solution.planning
+        N, D = len(self.problem.staff), self.problem.days_count
+        best_delta, best_move = 0, None
+        for a in range(N):
+            for b in range(a + 1, N):
+                for day in range(D):
+                    if plan[a][day] != plan[b][day]:
+                        changes = [(a, day, plan[b][day]), (b, day, plan[a][day])]
+                        best_delta, best_move = _evaluate(solution, changes, (a, b), best_delta, best_move)
+        return _apply_best(solution, best_move)
 
-        # For all staff pairs
-        for first_staff_int in range(len(self.problem.staff)):
-            for second_staff_int in range(first_staff_int + 1, len(self.problem.staff)):
-                
-                first_planning = solution.planning[first_staff_int]
-                second_planning = solution.planning[second_staff_int]
 
-                # For all days
-                for day in range(self.problem.days_count):
-
-                    if first_planning[day] != second_planning[day]:
-                        
-                        neighbor: Solution = solution.deep_copy()
-                        neighbor.planning[first_staff_int][day] = second_planning[day]
-                        neighbor.planning[second_staff_int][day] = first_planning[day]
-                        
-                        if neighbor.is_feasible():
-                            new_value = neighbor.value()
-                            if new_value < best_value:
-                                best_value = new_value
-                                best_solution = neighbor
-        
-        return best_solution
-    
 class DoubleExchangeNeighborhood(Neighborhood):
-    """This neighborhood includes all moves that swap 
-    two shifts between two different nurses on two 
-    different days."""
-
+    """Echange des shifts entre deux employes sur deux jours differents."""
     def __init__(self, problem: Problem) -> None:
         super().__init__(problem)
     
     def best_neighbor(self, solution: Solution) -> Solution:
-        # Variables
-        best_solution: Solution = solution
-        best_value: int = solution.value()
+        plan = solution.planning
+        N, D = len(self.problem.staff), self.problem.days_count
+        best_delta, best_move = 0, None
+        for a in range(N):
+            for b in range(a + 1, N):
+                for d1 in range(D):
+                    for d2 in range(d1 + 1, D):
+                        changes = [(a, d1, plan[b][d1]), (b, d1, plan[a][d1]),
+                                   (a, d2, plan[b][d2]), (b, d2, plan[a][d2])]
+                        best_delta, best_move = _evaluate(solution, changes, (a, b), best_delta, best_move)
+        return _apply_best(solution, best_move)
 
-        # For all staff pairs
-        for first_staff_int in range(len(self.problem.staff)):
-            for second_staff_int in range(first_staff_int + 1, len(self.problem.staff)):
-                
-                first_planning = solution.planning[first_staff_int]
-                second_planning = solution.planning[second_staff_int]
-
-                # For all day pairs
-                for first_day in range(self.problem.days_count):
-                    for second_day in range(first_day + 1, self.problem.days_count):
-
-                        neighbor: Solution = solution.deep_copy()
-                        neighbor.planning[first_staff_int][first_day] = second_planning[first_day]
-                        neighbor.planning[second_staff_int][first_day] = first_planning[first_day]
-                        neighbor.planning[first_staff_int][second_day] = second_planning[second_day]
-                        neighbor.planning[second_staff_int][second_day] = first_planning[second_day]
-                        
-                        if neighbor.is_feasible():
-                            new_value = neighbor.value()
-                            if new_value < best_value:
-                                best_value = new_value
-                                best_solution = neighbor
-        
-        return best_solution
 
 class BlockExchangeNeighborhood(Neighborhood):
-    """This neighborhood includes all moves where a
-    specific number of consecutive shifts is swapped between two
-    different nurses within the planning period."""
-
+    """Echange d'un bloc de jours consecutifs entre deux employés."""
     def __init__(self, problem: Problem) -> None:
         super().__init__(problem)
     
     def best_neighbor(self, solution: Solution) -> Solution:
-        # Variables
-        best_solution: Solution = solution
-        best_value: int = solution.value()
+        plan = solution.planning
+        N, D = len(self.problem.staff), self.problem.days_count
+        best_delta, best_move = 0, None
+        for a in range(N):
+            for b in range(a + 1, N):
+                for d1 in range(D):
+                    for d2 in range(d1 + 1, D):
+                        changes = []
+                        for d in range(d1, d2 + 1):
+                            changes.append((a, d, plan[b][d]))
+                            changes.append((b, d, plan[a][d]))
+                        best_delta, best_move = _evaluate(solution, changes, (a, b), best_delta, best_move)
+        return _apply_best(solution, best_move)
 
-        # For all staff pairs
-        for first_staff_int in range(len(self.problem.staff)):
-            for second_staff_int in range(first_staff_int + 1, len(self.problem.staff)):
-                
-                first_planning = solution.planning[first_staff_int]
-                second_planning = solution.planning[second_staff_int]
-
-                # For all day pairs
-                for first_day in range(self.problem.days_count):
-                    for second_day in range(first_day + 1, self.problem.days_count):
-
-                        neighbor: Solution = solution.deep_copy()
-                        neighbor.planning[first_staff_int][first_day:second_day + 1] = second_planning[first_day:second_day + 1]
-                        neighbor.planning[second_staff_int][first_day:second_day + 1] = first_planning[first_day:second_day + 1]
-                        
-                        if neighbor.is_feasible():
-                            new_value = neighbor.value()
-                            if new_value < best_value:
-                                best_value = new_value
-                                best_solution = neighbor
-        
-        return best_solution
 
 class ThreeExchangeNeighborhood(Neighborhood):
-    """This neighborhood includes all moves, where three 
-    shifts are exchanged between three different nurses 
-    on the same day."""
-
+    """Rotation circulaire (forward + backward) entre trois employes sur un meme jour."""
     def __init__(self, problem: Problem) -> None:
         super().__init__(problem)
     
     def best_neighbor(self, solution: Solution) -> Solution:
-        # Variables
-        best_solution: Solution = solution
-        best_value: int = solution.value()
-
-        # For all sets of 3 staff
-        for first_staff_int in range(len(self.problem.staff)):
-            for second_staff_int in range(first_staff_int + 1, len(self.problem.staff)):
-                for third_staff_int in range(second_staff_int + 1, len(self.problem.staff)):
-                
-                    # first_planning = solution.planning[first_staff_int]
-                    # second_planning = solution.planning[second_staff_int]
-
-                    # For all days
-                    for day in range(self.problem.days_count):
-
-                        for neighbor in self._get_neighbors((first_staff_int, second_staff_int, third_staff_int),
-                                                            day, solution):
-                            
-                            if neighbor.is_feasible():
-                                new_value = neighbor.value()
-                                if new_value < best_value:
-                                    best_value = new_value
-                                    best_solution = neighbor
-        
-        return best_solution
-
-    @staticmethod
-    def _get_neighbors(staff_ints: Tuple[int, int, int], day: int, solution: Solution):
-
-        neighbor: Solution = solution.deep_copy()
-
-        # backward move
-        neighbor.planning[staff_ints[0]][day] = solution.planning[staff_ints[1]][day]
-        neighbor.planning[staff_ints[1]][day] = solution.planning[staff_ints[2]][day]
-        neighbor.planning[staff_ints[2]][day] = solution.planning[staff_ints[0]][day]
-
-        yield neighbor
-
-        neighbor = solution.deep_copy()
-
-        # forward move
-        neighbor.planning[staff_ints[0]][day] = solution.planning[staff_ints[2]][day]
-        neighbor.planning[staff_ints[1]][day] = solution.planning[staff_ints[0]][day]
-        neighbor.planning[staff_ints[2]][day] = solution.planning[staff_ints[1]][day]
-
-        yield neighbor
-
-
+        plan = solution.planning
+        N, D = len(self.problem.staff), self.problem.days_count
+        best_delta, best_move = 0, None
+        for a in range(N):
+            for b in range(a + 1, N):
+                for c in range(b + 1, N):
+                    for day in range(D):
+                        # backward : a<-b, b<-c, c<-a
+                        bwd = [(a, day, plan[b][day]), (b, day, plan[c][day]), (c, day, plan[a][day])]
+                        best_delta, best_move = _evaluate(solution, bwd, (a, b, c), best_delta, best_move)
+                        # forward : a<-c, b<-a, c<-b
+                        fwd = [(a, day, plan[c][day]), (b, day, plan[a][day]), (c, day, plan[b][day])]
+                        best_delta, best_move = _evaluate(solution, fwd, (a, b, c), best_delta, best_move)
+        return _apply_best(solution, best_move)
 
 
 class ChangeShiftNeighborhood(Neighborhood):
@@ -201,30 +137,19 @@ class ChangeShiftNeighborhood(Neighborhood):
         super().__init__(problem)
 
     def best_neighbor(self, solution: Solution) -> Solution:
-        nb_staff = len(self.problem.staff)
-        nb_days = self.problem.days_count
+        plan = solution.planning
+        N, D = len(self.problem.staff), self.problem.days_count
         candidate_values = [None] + list(range(len(self.problem.shift_types)))
         best_delta, best_move = 0, None
-        for e in range(nb_staff):
-            for d in range(nb_days):
-                current = solution.planning[e][d]
+        for e in range(N):
+            for d in range(D):
+                current = plan[e][d]
                 for new_s in candidate_values:
                     if new_s == current:
                         continue
-                    delta = move_delta(solution, [(e, d, new_s)])
-                    if delta < best_delta:
-                        old = solution.planning[e][d]
-                        solution.planning[e][d] = new_s
-                        feasible = is_feasible_local(solution, [e])
-                        solution.planning[e][d] = old
-                        if feasible:
-                            best_delta, best_move = delta, (e, d, new_s)
-        if best_move is None:
-            return solution
-        neighbor = solution.deep_copy()
-        e, d, new_s = best_move
-        neighbor.planning[e][d] = new_s
-        return neighbor
+                    best_delta, best_move = _evaluate(solution, [(e, d, new_s)], (e,), best_delta, best_move)
+        return _apply_best(solution, best_move)
+
 
 def _blocks_of(sched):
     blocks, i, D = [], 0, len(sched)
@@ -233,25 +158,25 @@ def _blocks_of(sched):
             j = i
             while j < D and sched[j] is not None:
                 j += 1
-            blocks.append((i, j - 1, sched[i:j]));
-            i = j
+            blocks.append((i, j - 1, sched[i:j])); i = j
         else:
             i += 1
     return blocks
 
+
 class MoveBlockNeighborhood(Neighborhood):
     """Voisinage NON conservatif : deplace un bloc de travail entier vers une position
-    libre. Preserve la longueur du bloc (donc min/max consecutifs) tout en deplacant
-    la couverture vers d'autres jours."""
+    libre. Preserve la longueur du bloc tout en deplacant la couverture."""
 
     def __init__(self, problem: Problem) -> None:
         super().__init__(problem)
 
     def best_neighbor(self, solution: Solution) -> Solution:
-        best_delta, best_changes = 0, None
+        plan = solution.planning
         N, D = len(self.problem.staff), self.problem.days_count
+        best_delta, best_move = 0, None
         for e in range(N):
-            sched = solution.planning[e]
+            sched = plan[e]
             for (a, b, shift_list) in _blocks_of(sched):
                 length = b - a + 1
                 old_days = set(range(a, b + 1))
@@ -265,19 +190,5 @@ class MoveBlockNeighborhood(Neighborhood):
                     for k in range(length):
                         changes[a2 + k] = shift_list[k]
                     change_list = [(e, d, ns) for d, ns in changes.items()]
-                    delta = move_delta(solution, change_list)
-                    if delta < best_delta:
-                        olds = [(e, d, solution.planning[e][d]) for (e, d, _) in change_list]
-                        for (e_, d, ns) in change_list:
-                            solution.planning[e_][d] = ns
-                        feas = is_feasible_local(solution, [e])
-                        for (e_, d, os_) in olds:
-                            solution.planning[e_][d] = os_
-                        if feas:
-                            best_delta, best_changes = delta, change_list
-        if best_changes is None:
-            return solution
-        neighbor = solution.deep_copy()
-        for (e, d, ns) in best_changes:
-            neighbor.planning[e][d] = ns
-        return neighbor
+                    best_delta, best_move = _evaluate(solution, change_list, (e,), best_delta, best_move)
+        return _apply_best(solution, best_move)
