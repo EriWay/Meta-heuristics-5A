@@ -52,9 +52,9 @@ def mkdir_p(path):
 
 ### Tests sur les instances ###
 
-TEMPS_MAX_PAR_INSTANCE: float = 30 # en secondes
+TEMPS_MAX_PAR_INSTANCE: float = 300 # en secondes
 SEED: int = 42 # graine aléatoire pour la reproductibilité
-INSTANCES_A_TESTER: int = 2 # tester les instances 1 à n
+INSTANCES_A_TESTER: int = 5 # tester les instances 1 à n
 
 test_datetime = datetime.now()
 folder_name = test_datetime.strftime("%Y-%m-%d_%H-%M-%S")
@@ -64,7 +64,7 @@ mkdir_p(relative_path)
 with open(f"{relative_path}log.csv", 'x') as log:
     log.write("instance,initial value,final value,generation time,VNS time\n")
 
-    for instance in range(1, INSTANCES_A_TESTER + 1):
+    for instance in range(5, INSTANCES_A_TESTER + 1):
         print(f"Instance {instance}")
         seed(SEED + instance)
         # importation du problème
