@@ -9,6 +9,7 @@ from time import perf_counter
 from typing import List
 import os, os.path
 import errno
+from random import seed
 
 def info_provider(solution: Solution):
 
@@ -45,8 +46,9 @@ def mkdir_p(path):
 
 ### Tests sur les instances ###
 
-TEMPS_MAX_PAR_INSTANCE: float = 300 # en secondes
-INSTANCES_A_TESTER: int = 1 # tester les instances 1 à n
+TEMPS_MAX_PAR_INSTANCE: float = 30 # en secondes
+SEED: int = 42 # graine aléatoire pour la reproductibilité
+INSTANCES_A_TESTER: int = 2 # tester les instances 1 à n
 
 test_datetime = datetime.now()
 folder_name = test_datetime.strftime("%Y-%m-%d_%H-%M-%S")
@@ -59,7 +61,7 @@ with open(f"{relative_path}log.csv", 'x') as log:
 
         for instance in range(1, INSTANCES_A_TESTER + 1):
                 print(f"Instance {instance}")
-
+                seed(SEED + instance)
                 # importation du problème
                 problem: Problem = Importer().import_problem(f"Instance{instance}.txt")
 
@@ -76,10 +78,12 @@ with open(f"{relative_path}log.csv", 'x') as log:
 
                 # VND   
                 neighborhoods: List[Neighborhood] = [
-                      TwoExchangeNeighborhood(problem),
-                      DoubleExchangeNeighborhood(problem),
-                      BlockExchangeNeighborhood(problem),
-                      ThreeExchangeNeighborhood(problem)
+                    ChangeShiftNeighborhood(problem),
+                    MoveBlockNeighborhood(problem),
+                    TwoExchangeNeighborhood(problem),
+                    DoubleExchangeNeighborhood(problem),
+                    BlockExchangeNeighborhood(problem),
+                    ThreeExchangeNeighborhood(problem),
                       ]
                 vnd: VND = VND(problem, neighborhoods)
 

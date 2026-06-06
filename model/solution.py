@@ -38,7 +38,7 @@ class Solution:
 
         for staff_int in range(len(self.problem.staff)):
             schedule: PersonnalSchedule = self.planning[staff_int]
-            if is_personal_schedule_feasible(schedule, self.problem, staff_int) == False:
+            if not is_personal_schedule_feasible(schedule, self.problem, staff_int):
                 return False
         
         return True
@@ -131,8 +131,8 @@ class Solution:
             self.planning[staff_int] = schedule
         
         end_cpu_time = time.perf_counter()
-        # print("CHANGED CPU_TIME")
-        # self.cpu_time = end_cpu_time - start_cpu_time
+        #print("CHANGED CPU_TIME")
+        #self.cpu_time = end_cpu_time - start_cpu_time
 
             
 
@@ -472,6 +472,67 @@ def evaluate_weekend(staff: Staff, schedule: PersonnalSchedule) -> bool:
     
     return max_worked_weekends >= 0
 
+def move_delta(solution, changes) -> int:
+    """Variation de value() induite par un mouvement, calculée localement (delta-évaluation).
+
+    changes : liste de tuples (employe, jour, nouveau_shift), nouveau_shift = None pour un repos.
+    Le planning est modifié temporairement puis restauré : à la sortie, la solution est inchangée.
+    Recalcule uniquement les (jour, shift) dont la couverture change et les (employe, jour)
+    dont les préférences changent, au lieu de toute la fonction objectif.
+    """
+    plan = solution.planning
+    problem = solution.problem
+    shifts = problem.shift_types
+    staff = problem.staff
+    nb_staff = len(staff)
+
+    affected_cover = set()   # (jour, shift) touchés pour la couverture
+    affected_pref = set()    # (employe, jour) touchés pour les préférences
+    olds = []
+    for (e, d, new_s) in changes:
+        old_s = plan[e][d]
+        olds.append((e, d, old_s))
+        if old_s is not None:
+            affected_cover.add((d, old_s))
+        if new_s is not None:
+            affected_cover.add((d, new_s))
+        affected_pref.add((e, d))
+
+    def local_cost() -> int:
+        cost = 0
+        for (d, s) in affected_cover:
+            count = sum(plan[ee][d] == s for ee in range(nb_staff))
+            diff = count - shifts[s].staff_requirements[d]
+            if diff > 0:
+                cost += diff * shifts[s].cover_above_penalties[d]
+            else:
+                cost += (-diff) * shifts[s].cover_below_penalties[d]
+        for (e, d) in affected_pref:
+            for s in range(len(shifts)):
+                avoid = staff[e].shift_avoid_penalties[d][s]
+                if avoid is not None and plan[e][d] == s:
+                    cost += avoid
+                wish = staff[e].shift_wish_penalties[d][s]
+                if wish is not None and plan[e][d] != s:
+                    cost += wish
+        return cost
+
+    before = local_cost()
+    for (e, d, new_s) in changes:
+        plan[e][d] = new_s
+    after = local_cost()
+    for (e, d, old_s) in olds:        # restauration
+        plan[e][d] = old_s
+    return after - before
+
+
+def is_feasible_local(solution, employees) -> bool:
+    """Faisabilité des seuls employés donnés (suffit après un mouvement local,
+    car les employés non modifiés conservent leur faisabilité)."""
+    for e in employees:
+        if not is_personal_schedule_feasible(solution.planning[e], solution.problem, e):
+            return False
+    return True
 
 
 if __name__ == "__main__":

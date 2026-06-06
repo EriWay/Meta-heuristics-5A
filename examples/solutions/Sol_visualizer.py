@@ -6,7 +6,7 @@ from typing import List, Optional
 
 # Ajoute Infirmières à sys.path pour que les imports fonctionnent
 # quel que soit le répertoire courant au moment du lancement.
-_PKG_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+_PKG_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '2026-06-05_21-05-13', 'Instance1.solution.1720.ros'))
 if _PKG_ROOT not in sys.path:
     sys.path.insert(0, _PKG_ROOT)
 
