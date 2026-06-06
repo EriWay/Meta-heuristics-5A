@@ -7,7 +7,7 @@ from model.neighborhood import (
     DoubleExchangeNeighborhood,
     Neighborhood,
     ThreeExchangeNeighborhood,
-    TwoExchangeNeighborhood,
+    TwoExchangeNeighborhood, ChangeShiftNeighborhood, MoveBlockNeighborhood,
 )
 from model.problem import Problem
 from datetime import datetime
@@ -52,9 +52,9 @@ def mkdir_p(path):
 
 ### Tests sur les instances ###
 
-TEMPS_MAX_PAR_INSTANCE: float = 8 # en secondes
+TEMPS_MAX_PAR_INSTANCE: float = 30 # en secondes
 SEED: int = 42 # graine aléatoire pour la reproductibilité
-INSTANCES_A_TESTER: int = 1 # tester les instances 1 à n
+INSTANCES_A_TESTER: int = 2 # tester les instances 1 à n
 
 test_datetime = datetime.now()
 folder_name = test_datetime.strftime("%Y-%m-%d_%H-%M-%S")
@@ -84,10 +84,12 @@ with open(f"{relative_path}log.csv", 'x') as log:
         # VNS   
         print(f"\tLancement du VNS pour {TEMPS_MAX_PAR_INSTANCE} s max :")
         neighborhoods: List[Neighborhood] = [
+            ChangeShiftNeighborhood(problem),
+            MoveBlockNeighborhood(problem),
             TwoExchangeNeighborhood(problem),
             DoubleExchangeNeighborhood(problem),
             BlockExchangeNeighborhood(problem),
-            ThreeExchangeNeighborhood(problem)
+            ThreeExchangeNeighborhood(problem),
         ]
         vns: VNS = VNS(problem, neighborhoods)
 

@@ -3,8 +3,9 @@ as defined by Rahimian et al., 2017
 """
 
 from model.problem import Problem
-from model.solution import Solution
 from typing import Tuple
+from model.solution import Solution, move_delta, is_feasible_local
+
 
 class Neighborhood:
     """Interface for implementing neighborhoods structures."""
@@ -170,7 +171,7 @@ class ThreeExchangeNeighborhood(Neighborhood):
 
     @staticmethod
     def _get_neighbors(staff_ints: Tuple[int, int, int], day: int, solution: Solution):
-        
+
         neighbor: Solution = solution.deep_copy()
 
         # backward move
@@ -188,3 +189,95 @@ class ThreeExchangeNeighborhood(Neighborhood):
         neighbor.planning[staff_ints[2]][day] = solution.planning[staff_ints[1]][day]
 
         yield neighbor
+
+
+
+
+class ChangeShiftNeighborhood(Neighborhood):
+    """Voisinage NON conservatif : change le shift d'un seul employe sur un jour
+    (assigner, retirer, ou remplacer). Modifie la couverture, contrairement aux echanges."""
+
+    def __init__(self, problem: Problem) -> None:
+        super().__init__(problem)
+
+    def best_neighbor(self, solution: Solution) -> Solution:
+        nb_staff = len(self.problem.staff)
+        nb_days = self.problem.days_count
+        candidate_values = [None] + list(range(len(self.problem.shift_types)))
+        best_delta, best_move = 0, None
+        for e in range(nb_staff):
+            for d in range(nb_days):
+                current = solution.planning[e][d]
+                for new_s in candidate_values:
+                    if new_s == current:
+                        continue
+                    delta = move_delta(solution, [(e, d, new_s)])
+                    if delta < best_delta:
+                        old = solution.planning[e][d]
+                        solution.planning[e][d] = new_s
+                        feasible = is_feasible_local(solution, [e])
+                        solution.planning[e][d] = old
+                        if feasible:
+                            best_delta, best_move = delta, (e, d, new_s)
+        if best_move is None:
+            return solution
+        neighbor = solution.deep_copy()
+        e, d, new_s = best_move
+        neighbor.planning[e][d] = new_s
+        return neighbor
+
+def _blocks_of(sched):
+    blocks, i, D = [], 0, len(sched)
+    while i < D:
+        if sched[i] is not None:
+            j = i
+            while j < D and sched[j] is not None:
+                j += 1
+            blocks.append((i, j - 1, sched[i:j]));
+            i = j
+        else:
+            i += 1
+    return blocks
+
+class MoveBlockNeighborhood(Neighborhood):
+    """Voisinage NON conservatif : deplace un bloc de travail entier vers une position
+    libre. Preserve la longueur du bloc (donc min/max consecutifs) tout en deplacant
+    la couverture vers d'autres jours."""
+
+    def __init__(self, problem: Problem) -> None:
+        super().__init__(problem)
+
+    def best_neighbor(self, solution: Solution) -> Solution:
+        best_delta, best_changes = 0, None
+        N, D = len(self.problem.staff), self.problem.days_count
+        for e in range(N):
+            sched = solution.planning[e]
+            for (a, b, shift_list) in _blocks_of(sched):
+                length = b - a + 1
+                old_days = set(range(a, b + 1))
+                for a2 in range(0, D - length + 1):
+                    if a2 == a:
+                        continue
+                    if any(sched[d] is not None and d not in old_days
+                           for d in range(a2, a2 + length)):
+                        continue
+                    changes = {d: None for d in range(a, b + 1)}
+                    for k in range(length):
+                        changes[a2 + k] = shift_list[k]
+                    change_list = [(e, d, ns) for d, ns in changes.items()]
+                    delta = move_delta(solution, change_list)
+                    if delta < best_delta:
+                        olds = [(e, d, solution.planning[e][d]) for (e, d, _) in change_list]
+                        for (e_, d, ns) in change_list:
+                            solution.planning[e_][d] = ns
+                        feas = is_feasible_local(solution, [e])
+                        for (e_, d, os_) in olds:
+                            solution.planning[e_][d] = os_
+                        if feas:
+                            best_delta, best_changes = delta, change_list
+        if best_changes is None:
+            return solution
+        neighbor = solution.deep_copy()
+        for (e, d, ns) in best_changes:
+            neighbor.planning[e][d] = ns
+        return neighbor
